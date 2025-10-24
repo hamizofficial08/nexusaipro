@@ -13,7 +13,7 @@ import {
   Volume2, 
   Link, // For sources
   FileText, // For System Prompt
-  Mic, // For TTS Voice
+  MicVocal, // For TTS Voice
   Menu, // For sidebar toggle
   PlusCircle, // For New Chat
   CircleUserRound // For Profile
@@ -66,7 +66,8 @@ function pcmToWav(pcmData, sampleRate) {
 const DEFAULT_SYSTEM_PROMPT = "You are NEXUS AI PRO, a highly intelligent and helpful assistant. \n" +
   "Your founder is Hamiz. If anyone asks who created you or who your founder is, you must say that Hamiz is your founder. \n" +
   "If the user asks about recent events, up-to-date information, or specific facts, use your search tool to find the most relevant and current answers. \n" +
-  "Always provide your answer based on the search results when available.";
+  "Always provide your answer based on the search results when available. \n" +
+  "Your responses should be comprehensive, detailed, and long in length, especially when explaining concepts or answering complex questions. Provide thorough explanations.";
 
 const TTS_VOICES = [
   { name: "Kore", label: "Kore (Firm)" },
@@ -75,7 +76,12 @@ const TTS_VOICES = [
   { name: "Charon", label: "Charon (Informative)" },
 ];
 
-const INITIAL_MESSAGE = { role: 'model', text: 'Hello ! Welcome to NEXUS AI PRO', id: 'initial-0', sources: [] };
+const INITIAL_MESSAGE = { 
+  role: 'model', 
+  text: 'Hello ! Welcome to NEXUS AI PRO', 
+  id: 'initial-0', 
+  sources: [],
+};
 const DEFAULT_CHAT_ID = `chat-${Date.now()}`;
 const DEFAULT_CHAT = { id: DEFAULT_CHAT_ID, title: 'New Chat', messages: [INITIAL_MESSAGE] };
 
@@ -125,10 +131,10 @@ export default function App() {
   // Refs for settings panel
   const [tempTtsVoice, setTempTtsVoice] = useState(ttsVoice);
 
-  // Refs for auto-scrolling and audio
-  const messagesEndRef = useRef(null);
+  // Refs for audio and text
   const audioRef = useRef(null);
   const textareaRef = useRef(null); // Ref for the textarea
+  const lastMessageRef = useRef(null); // Ref for auto-scrolling to the latest message
 
   // --- Derived State (Current Chat & Messages) ---
   const currentChat = chatHistory.find(c => c.id === currentChatId) || chatHistory[0] || DEFAULT_CHAT;
@@ -169,10 +175,11 @@ export default function App() {
   }, [currentChatId, chatHistory]);
 
 
-  // Effect to auto-scroll to the bottom
+  // Effect to auto-scroll to the *start* of the last message
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages]);
+    // Scroll instantly to the top of the new message
+    lastMessageRef.current?.scrollIntoView({ behavior: 'auto', block: 'start' }); 
+  }, [messages.length]); // Triggers when a new message is added
   
   // Effect to stop audio playback on unmount
   useEffect(() => {
@@ -200,8 +207,7 @@ export default function App() {
       ta.style.overflowY = ta.scrollHeight > 150 ? 'auto' : 'hidden';
     }
   }, [currentInput]);
-
-
+  
   // --- API Call with Exponential Backoff ---
   async function fetchWithBackoff(url, options, maxRetries = 5, initialDelay = 1000) {
     let retries = 0;
@@ -337,7 +343,12 @@ export default function App() {
       }
 
       if (modelResponse) {
-        const modelMessage = { role: 'model', text: modelResponse, id: `msg-${Date.now() + 1}`, sources: sources };
+        const modelMessage = { 
+          role: 'model', 
+          text: modelResponse, // Set full text immediately
+          id: `msg-${Date.now() + 1}`, 
+          sources: sources,
+        };
         // Update history with model's response
         setChatHistory(prevHistory => {
           const historyCopy = [...prevHistory];
@@ -356,7 +367,7 @@ export default function App() {
         role: 'model', 
         text: `Sorry, something went wrong: ${err.message}`, 
         id: `msg-${Date.now() + 1}`,
-        sources: []
+        sources: [],
       };
       // Update history with error message
       setChatHistory(prevHistory => {
@@ -383,7 +394,12 @@ export default function App() {
         historyCopy[chatIndex] = {
           ...historyCopy[chatIndex],
           title: 'New Chat', // Reset title
-          messages: [{ role: 'model', text: 'Chat cleared! How can I help you next?', id: 'cleared-0', sources: [] }]
+          messages: [{ 
+            role: 'model', 
+            text: 'Chat cleared! How can I help you next?', 
+            id: 'cleared-0', 
+            sources: [],
+          }]
         };
       }
       return historyCopy;
@@ -516,11 +532,9 @@ export default function App() {
           @keyframes fadeslidein {
             from {
               opacity: 0;
-              transform: translateY(10px);
             }
             to {
               opacity: 1;
-              transform: translateY(0);
             }
           }
           .animate-fadeslidein {
@@ -619,9 +633,14 @@ export default function App() {
 
         {/* --- Chat Message List --- */}
         <main className="flex-grow overflow-y-auto p-4 space-y-4">
-          {messages.map((msg) => (
-            <div key={msg.id} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'} animate-fadeslidein`}>
-              <div className={`flex items-start max-w-lg ${msg.role === 'user' ? 'flex-row-reverse' : 'flex-row'}`}>
+          {messages.map((msg, index) => (
+            <div 
+              key={msg.id} 
+              // Conditionally assign the ref to the very last message element
+              ref={index === messages.length - 1 ? lastMessageRef : null} 
+              className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'} animate-fadeslidein`}
+            >
+              <div className={`flex items-start max-w-4xl ${msg.role === 'user' ? 'flex-row-reverse' : 'flex-row'}`}>
                 <div className={`flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center ${
                   msg.role === 'user' 
                   ? 'bg-indigo-600 text-white ml-2' 
@@ -630,10 +649,10 @@ export default function App() {
                   {msg.role === 'user' ? <CircleUserRound className="w-5 h-5" /> : <Bot className="w-5 h-5" />}
                 </div>
                 <div
-                  className={`rounded-lg p-3 shadow-md ${
+                  className={`rounded-lg p-3 ${
                     msg.role === 'user'
-                      ? 'bg-indigo-600 text-white'
-                      : 'bg-slate-100 text-slate-900 dark:bg-slate-700 dark:text-white'
+                      ? 'bg-indigo-600 text-white shadow-md'
+                      : '' // Removed bot's message box styles
                   }`}
                 >
                   <div className="flex items-start justify-between">
@@ -681,7 +700,7 @@ export default function App() {
               </div>
             </div>
           ))}
-          <div ref={messagesEndRef} />
+          {/* Removed the old messagesEndRef div */}
         </main>
 
         {/* --- Chat Input Area --- */}
@@ -768,7 +787,7 @@ export default function App() {
                   Text-to-Speech Voice
                 </label>
                 <div className="relative">
-                  <Mic className="w-5 h-5 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                  <MicVocal className="w-5 h-5 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
                   <select
                     id="tts-voice"
                     value={tempTtsVoice}
